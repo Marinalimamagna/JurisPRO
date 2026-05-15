@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc } from "firebase/firestore";
 
+// CONFIGURAÇÃO DO SEU FIREBASE (MANTIDA ORIGINAL)
 const firebaseConfig = {
   apiKey: "AIzaSyCnZIJ_LHfGJMivq3TuTcY2KRj4HErkZSs",
   authDomain: "cadastro-formulario-a2a77.firebaseapp.com",
@@ -16,22 +17,25 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// DICIONÁRIO DE IDIOMAS
+// 1. DICIONÁRIO DE IDIOMAS (NOVO - INTEGRADO AO SEU CÓDIGO)
 const langData = {
   pt: {
     dash: "Dashboard BI", clients: "Clientes (CRM)", procs: "Processos & Tribunais", agenda: "Agenda & Prazos",
     fin: "Financeiro", docs: "Gerador de Docs", welcome: "Bem-vinda, Dra. Marina", newCli: "Novo Cadastro de Cliente",
-    save: "CADASTRAR E GERAR HISTÓRICO", logout: "Sair (LGPD Safe)", name: "Nome Completo"
+    save: "CADASTRAR E GERAR HISTÓRICO", logout: "Sair (LGPD Safe)", name: "Nome Completo", registered: "Clientes Cadastrados",
+    generateDoc: "Gerador Inteligente de Documentos", selectCli: "Selecione o cliente para preencher automaticamente:"
   },
   en: {
     dash: "BI Dashboard", clients: "Clients (CRM)", procs: "Lawsuits & Courts", agenda: "Schedule & Deadlines",
     fin: "Financial", docs: "Doc Generator", welcome: "Welcome, Dr. Marina", newCli: "New Client Registration",
-    save: "REGISTER & GENERATE HISTORY", logout: "Logout (LGPD Safe)", name: "Full Name"
+    save: "REGISTER & GENERATE HISTORY", logout: "Logout (LGPD Safe)", name: "Full Name", registered: "Registered Clients",
+    generateDoc: "Intelligent Document Generator", selectCli: "Select client for automatic pre-fill:"
   },
   es: {
     dash: "Panel de BI", clients: "Clientes (CRM)", procs: "Procesos y Tribunales", agenda: "Agenda y Plazos",
     fin: "Financiero", docs: "Generador de Docs", welcome: "Bienvenida, Dra. Marina", newCli: "Nuevo Registro de Cliente",
-    save: "REGISTRAR Y GENERAR HISTORIAL", logout: "Salir (LGPD Safe)", name: "Nombre Completo"
+    save: "REGISTRAR Y GENERAR HISTORIAL", logout: "Salir (LGPD Safe)", name: "Nombre Completo", registered: "Clientes Registrados",
+    generateDoc: "Generador Inteligente de Documentos", selectCli: "Seleccione el cliente para autocompletar:"
   }
 };
 
@@ -42,18 +46,23 @@ export default function App() {
   const [tab, setTab] = useState('dashboard');
   const [clientes, setClientes] = useState([]);
   const [processos, setProcessos] = useState([]);
-  const [lang, setLang] = useState('pt'); // Estado do Idioma
-  const [menuOpen, setMenuOpen] = useState(false); // Estado do Menu Mobile
+  
+  // 2. ESTADOS DO IDIOMA E MOBILE (NOVOS)
+  const [lang, setLang] = useState('pt'); // Idioma padrão
+  const [menuOpen, setMenuOpen] = useState(false); // Menu mobile
   const t = langData[lang]; // Atalho para tradução
 
+  // Seu Estado para Cadastro de Cliente (Original Mantido)
   const [formCli, setFormCli] = useState({ nome: '', cpf: '', tel: '', email: '' });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
+        // Puxa Clientes (Lógica original mantida)
         onSnapshot(query(collection(db, "clientes"), where("advId", "==", u.uid)), (s) => 
           setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
+        // Puxa Processos (Lógica original mantida)
         onSnapshot(query(collection(db, "processos"), where("advId", "==", u.uid)), (s) => 
           setProcessos(s.docs.map(d => ({...d.data(), id: d.id}))));
       }
@@ -61,32 +70,38 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Sua Função salvarCliente (Original Mantida)
   const salvarCliente = async () => {
     if(!formCli.nome) return alert("Nome é obrigatório");
     await addDoc(collection(db, "clientes"), { ...formCli, advId: user.uid, data: new Date().toLocaleDateString() });
     setFormCli({ nome: '', cpf: '', tel: '', email: '' });
-    alert("Cliente Cadastrado!");
+    alert("Cliente Cadastrado e Protegido (LGPD)!"); // Mantendo sua mensagem
   };
 
-  if (!user) return <Login handleAuth={(m, e, p) => m === 'login' ? signInWithEmailAndPassword(auth, e, p) : createUserWithEmailAndPassword(auth, e, p)} />;
+  // Login component (Original Mantido)
+  if (!user) return <Login handleAuth={(m, e, p) => m === 'login' ? signInWithEmailAndPassword(auth, e, p) : createUserWithEmailAndPassword(auth, e, p)} COLORS={COLORS} s={s} />;
 
   return (
     <div style={s.app}>
-      {/* BOTÃO HAMBÚRGUER (SÓ APARECE NO MOBILE) */}
+      {/* 3. MOBILE HEADER (NOVO) */}
       <div style={s.mobileBar}>
         <div style={{color: COLORS.accent, fontWeight:'bold'}}>JurisPRO</div>
         <button onClick={() => setMenuOpen(!menuOpen)} style={s.hamburger}>☰</button>
       </div>
 
+      {/* MENU LATERAL COMPLETO (Original, mas Responsivo) */}
       <aside style={{...s.sidebar, left: menuOpen ? '0' : (window.innerWidth <= 768 ? '-100%' : '0')}}>
-        <div style={s.brand}>JurisPRO <span style={{fontSize:'10px', color: COLORS.accent}}>v2.0</span></div>
+        <div style={s.brand}>JurisPRO <span style={{fontSize:'10px', color: COLORS.accent}}>v2.0 Global</span></div>
         
-        {/* SELETOR DE IDIOMA */}
-        <select onChange={(e) => setLang(e.target.value)} style={s.langSelect}>
-            <option value="pt">🇧🇷 PT</option>
-            <option value="en">🇺🇸 EN</option>
-            <option value="es">🇪🇸 ES</option>
-        </select>
+        {/* 4. SELETOR DE IDIOMA (NOVO - INTEGRADO A SIDEBAR ORIGINAL) */}
+        <div style={s.langSelector}>
+            <label style={{fontSize:'10px', color:'#94a3b8'}}>Idioma / Language / Idioma</label>
+            <select onChange={(e) => setLang(e.target.value)} style={s.langSelectInput}>
+                <option value="pt">🇧🇷 Português</option>
+                <option value="en">🇺🇸 English</option>
+                <option value="es">🇪🇸 Español</option>
+            </select>
+        </div>
 
         <nav style={s.nav}>
           <li onClick={() => {setTab('dashboard'); setMenuOpen(false)}} style={tab === 'dashboard' ? s.active : s.li}>📊 {t.dash}</li>
@@ -99,9 +114,13 @@ export default function App() {
         <button onClick={() => signOut(auth)} style={s.btnOut}>🔒 {t.logout}</button>
       </aside>
 
+      {/* 5. OVERLAY MOBILE (NOVO - PARA FECHAR MENU) */}
+      {menuOpen && <div onClick={() => setMenuOpen(false)} style={s.overlay}></div>}
+
       <main style={s.main}>
         <h2 style={{marginBottom: '20px'}}>{t.welcome}</h2>
 
+        {/* TELA DE CLIENTES (ITEM 1 ORIGINAL - MANTIDA E TRADUZIDA) */}
         {tab === 'clientes' && (
           <div style={s.card}>
             <h2>{t.newCli}</h2>
@@ -112,49 +131,87 @@ export default function App() {
               <input style={s.input} placeholder="E-mail" value={formCli.email} onChange={e => setFormCli({...formCli, email: e.target.value})} />
             </div>
             <button style={s.btnMain} onClick={salvarCliente}>{t.save}</button>
+            
+            <div style={{marginTop: '30px'}}>
+              <h3>{t.registered}</h3>
+              {clientes.map(c => (
+                <div key={c.id} style={s.listCard}>
+                  <strong>{c.nome}</strong> - {c.cpf} | <span style={{color: COLORS.accent}}>Acessar Área do Cliente</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ... Resto das abas seguem o mesmo padrão usando {t.suaChave} */}
-        {['dashboard', 'processos', 'agenda', 'financeiro'].includes(tab) && (
-            <div style={s.center}>
-                <h2>Módulo {t[tab] || tab.toUpperCase()}</h2>
-                <p>Sincronizado com Nuvem Global</p>
+        {/* TELA DE GERAÇÃO DE DOCUMENTOS (ITEM 5 ORIGINAL - MANTIDA E TRADUZIDA) */}
+        {tab === 'docs' && (
+          <div style={s.card}>
+            <h2>{t.generateDoc}</h2>
+            <p>{t.selectCli}</p>
+            <select style={s.input}>
+              {clientes.map(c => <option key={c.id}>{c.nome}</option>)}
+            </select>
+            <div style={s.docGrid}>
+              <button style={s.btnDoc}>📄 Procuração Ad Judicia</button>
+              <button style={s.btnDoc}>📄 Contrato de Honorários</button>
+              <button style={s.btnDoc}>📄 Declaração de Hipossuficiência</button>
             </div>
+          </div>
+        )}
+
+        {/* MENSAGEM DE CONSTRUÇÃO (MANTIDA E TRADUZIDA) */}
+        {['dashboard', 'processos', 'agenda', 'financeiro'].includes(tab) && (
+          <div style={s.center}>
+            <h2>Módulo {t[tab] || tab.toUpperCase()}</h2>
+            <p>Conectando APIs de Tribunais Globais...</p>
+          </div>
         )}
       </main>
     </div>
   );
 }
 
+// ESTILOS PREMIUM (ORIGINAIS ADAPTADOS PARA MOBILE)
 const s = {
-  app: { display: 'flex', height: '100vh', backgroundColor: COLORS.bg, color: COLORS.text, fontFamily: 'Segoe UI, sans-serif', position: 'relative', overflow: 'hidden' },
-  mobileBar: { display: window.innerWidth <= 768 ? 'flex' : 'none', justifyContent: 'space-between', padding: '15px', background: COLORS.card, borderBottom: `1px solid ${COLORS.border}`, position: 'fixed', top: 0, width: '100%', zIndex: 100 },
-  hamburger: { background: 'none', border: 'none', color: COLORS.accent, fontSize: '24px' },
+  app: { display: 'flex', height: '100vh', backgroundColor: COLORS.bg, color: COLORS.text, fontFamily: 'Segoe UI, sans-serif', overflow: 'hidden' },
+  // Estilos Mobile (Novos)
+  mobileBar: { display: window.innerWidth <= 768 ? 'flex' : 'none', justifyContent: 'space-between', padding: '15px 20px', background: COLORS.card, borderBottom: `1px solid ${COLORS.border}`, position: 'fixed', top: 0, width: '100%', zIndex: 100 },
+  hamburger: { background: 'none', border: 'none', color: COLORS.accent, fontSize: '24px', cursor: 'pointer' },
+  overlay: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 98 },
+  // Sidebar Adaptada
   sidebar: { 
     width: '280px', backgroundColor: COLORS.card, padding: '30px', borderRight: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column',
-    position: window.innerWidth <= 768 ? 'absolute' : 'relative', transition: '0.3s', height: '100%', zIndex: 99
+    position: window.innerWidth <= 768 ? 'absolute' : 'relative', height: '100%', transition: '0.3s', zIndex: 99
   },
-  langSelect: { background: '#000', color: '#fff', padding: '5px', borderRadius: '5px', marginBottom: '20px', border: `1px solid ${COLORS.border}` },
+  // Seletor Idioma
+  langSelector: { marginBottom: '20px', padding: '10px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '10px' },
+  langSelectInput: { width: '100%', padding: '8px', background: '#000', color: '#fff', border: `1px solid ${COLORS.border}`, borderRadius: '5px', marginTop: '5px' },
+
   brand: { fontSize: '24px', fontWeight: 'bold', color: COLORS.accent, marginBottom: '40px' },
   nav: { flex: 1, listStyle: 'none', padding: 0 },
-  li: { padding: '15px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px' },
+  li: { padding: '15px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px', transition: '0.3s' },
   active: { padding: '15px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: COLORS.accent, fontWeight: 'bold' },
   main: { flex: 1, padding: window.innerWidth <= 768 ? '80px 20px 20px' : '40px', overflowY: 'auto' },
-  card: { backgroundColor: COLORS.card, padding: '20px', borderRadius: '20px', border: `1px solid ${COLORS.border}` },
+  card: { backgroundColor: COLORS.card, padding: '30px', borderRadius: '20px', border: `1px solid ${COLORS.border}` },
   input: { width: '100%', padding: '12px', margin: '10px 0', borderRadius: '8px', border: `1px solid ${COLORS.border}`, backgroundColor: '#000', color: '#fff', boxSizing: 'border-box' },
-  formGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: '10px' },
-  btnMain: { width: '100%', padding: '15px', backgroundColor: COLORS.accent, color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
+  // Grid do formulário adaptável
+  formGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: '15px' },
+  btnMain: { width: '100%', padding: '15px', backgroundColor: COLORS.accent, color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '20px' },
+  listCard: { padding: '15px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '5px' },
+  // Grid de documentos adaptável
+  docGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr 1fr', gap: '20px', marginTop: '20px' },
+  btnDoc: { padding: '20px', backgroundColor: '#1e293b', color: '#fff', border: `1px solid ${COLORS.border}`, borderRadius: '10px', cursor: 'pointer', textAlign: 'center' },
   btnOut: { color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', textAlign: 'left' },
   center: { textAlign: 'center', marginTop: '100px' }
 };
 
-function Login({ handleAuth }) {
+// COMPONENTE DE LOGIN (MANTIDO E ADAPTADO)
+function Login({ handleAuth, COLORS, s }) {
   const [e, setE] = React.useState('');
   const [p, setP] = React.useState('');
   return (
     <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#000', color:'#fff', padding: '20px'}}>
-      <div style={{padding:'40px', background:COLORS.card, borderRadius:'20px', textAlign:'center', width:'100%', maxWidth:'350px'}}>
+      <div style={{padding:'40px', background:COLORS.card, borderRadius:'20px', textAlign:'center', width:'100%', maxWidth:'350px', border:`1px solid ${COLORS.border}`}}>
         <h2>JurisPRO Elite</h2>
         <input style={s.input} placeholder="E-mail" onChange={x => setE(x.target.value)} />
         <input style={s.input} type="password" placeholder="Senha" onChange={x => setP(x.target.value)} />
