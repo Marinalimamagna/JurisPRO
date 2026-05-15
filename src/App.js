@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { getFirestore, collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCnZIJ_LHfGJMivq3TuTcY2KRj4HErkZSs",
@@ -13,167 +13,204 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
-
-const THEME = { sidebar: '#0f172a', bg: '#f1f5f9', accent: '#2563eb', border: '#e2e8f0', white: '#ffffff', text: '#1e293b' };
-
-const i18n = {
-  pt: { start: "Início", clients: "Clientes", cases: "Processos", calcs: "Calculadora PRO", ia: "IA Jurídica", calc_title: "Gestor de Prazos Processuais", date_pub: "Data da Publicação", days: "Prazo (Dias)", norm: "Norma Aplicável", result: "Data Final Estimada", detail: "Memória de Cálculo", back: "Voltar", new_cli: "Novo Cliente" },
-  en: { start: "Home", clients: "Clients", cases: "Lawsuits", calcs: "PRO Calculator", ia: "Legal AI", calc_title: "Procedural Deadline Manager", date_pub: "Publication Date", days: "Days", norm: "Legal Norm", result: "Estimated Due Date", detail: "Calculation Memory", back: "Back", new_cli: "Add Client" },
-  es: { start: "Inicio", clients: "Clientes", cases: "Procesos", calcs: "Calculadora PRO", ia: "IA Jurídica", calc_title: "Gestor de Plazos Procesales", date_pub: "Fecha de Publicación", days: "Días", norm: "Norma Aplicable", result: "Fecha Final Estimada", detail: "Memoria de Cálculo", back: "Volver", new_cli: "Nuevo Cliente" }
-};
+const auth = getAuth(app);
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [tab, setTab] = useState('dashboard');
-  const [lang, setLang] = useState('pt');
-  const [clientes, setClientes] = useState([]);
-  const [processos, setProcessos] = useState([]);
-  const [viewCli, setViewCli] = useState(null);
+  const [authMode, setAuthMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   
-  // Estados da Calculadora Avançada
-  const [calc, setCalc] = useState({ data: '', dias: 15, tipo: 'uteis', norma: 'cpc' });
-  const [resultado, setResultado] = useState(null);
+  const [tab, setTab] = useState('inicio');
+  const [clientes, setClientes] = useState([]);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [tempProcesso, setTempProcesso] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  
+  const [calcTab, setCalcTab] = useState('prazos');
+  const [cData, setCData] = useState('');
+  const [cDias, setCDias] = useState(15);
+  const [cValor, setCValor] = useState('');
+  const [cPerc, setCPerc] = useState(20);
+  const [res, setRes] = useState('');
 
-  const t = i18n[lang];
+  const [iaPrompt, setIaPrompt] = useState('');
+  const [iaResp, setIaResp] = useState('');
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) {
-        onSnapshot(query(collection(db, "clientes"), where("advId", "==", u.uid)), s => setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
-        onSnapshot(query(collection(db, "processos"), where("advId", "==", u.uid)), s => setProcessos(s.docs.map(d => ({...d.data(), id: d.id}))));
-      }
+    onAuthStateChanged(auth, (user) => {
+      setUser(user);
     });
-    return unsub;
   }, []);
 
-  const calcularPrazoElite = () => {
-    if(!calc.data) return alert("Insira a data de publicação.");
-    let d = new Date(calc.data);
-    let diasContados = 0;
-    
-    // Simulação de Recesso Forense (20/12 a 20/01)
-    const isRecesso = (date) => {
-        const m = date.getMonth();
-        const day = date.getDate();
-        if (m === 11 && day >= 20) return true;
-        if (m === 0 && day <= 20) return true;
-        return false;
-    };
-
-    while (diasContados < calc.dias) {
-      d.setDate(d.getDate() + 1);
-      if (isRecesso(d)) continue; // Pula recesso
-      if (calc.tipo === 'corridos') {
-        diasContados++;
-      } else {
-        if (d.getDay() !== 0 && d.getDay() !== 6) diasContados++; // Pula FDS
-      }
+  useEffect(() => {
+    if (user) {
+      const q = query(collection(db, "clientes"), orderBy("nome"));
+      return onSnapshot(q, (s) => setClientes(s.docs.map(d => ({ ...d.data(), id: d.id }))));
     }
-    setResultado(d.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+  }, [user]);
+
+  const handleAuth = async () => {
+    try {
+      if (authMode === 'login') await signInWithEmailAndPassword(auth, email, password);
+      else await createUserWithEmailAndPassword(auth, email, password);
+    } catch (e) { alert("Erro: " + e.message); }
   };
 
-  if (!user) return <div style={s.loginWrapper}><div style={s.card}><h2>JurisPRO Login</h2><button style={s.btnMain} onClick={() => signInWithEmailAndPassword(auth, "teste@teste.com", "123456")}>Acessar Demo</button></div></div>;
+  const editarCliente = async (c) => {
+    const n = prompt("Editar Nome:", c.nome);
+    const d = prompt("Editar Documento:", c.cpf);
+    if (n && d) await updateDoc(doc(db, "clientes", c.id), { nome: n, cpf: d });
+  };
+
+  const salvarProcesso = async () => {
+    if (!selectedClient) return;
+    await updateDoc(doc(db, "clientes", selectedClient.id), { processo: tempProcesso });
+    alert("Processo vinculado com sucesso!");
+    setSelectedClient({ ...selectedClient, processo: tempProcesso });
+  };
+
+  const calcularTudo = () => {
+    if (calcTab === 'prazos') {
+      if (!cData) return;
+      let d = new Date(cData + 'T12:00:00');
+      let cont = 0;
+      while (cont < parseInt(cDias)) {
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) cont++;
+      }
+      setRes(`Data Fatal: ${d.toLocaleDateString('pt-BR')}`);
+    } else if (calcTab === 'honorarios') {
+      const valor = parseFloat(cValor);
+      const total = (valor * (parseInt(cPerc) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      setRes(`Honorários: ${total}`);
+    }
+  };
+
+  if (!user) {
+    return (
+      <div style={s.authPage}>
+        <div style={s.authCard}>
+          <h1 style={{color:'#111827', marginBottom:'20px'}}>JurisPRO</h1>
+          <h3>{authMode === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</h3>
+          <input placeholder="E-mail" style={s.input} onChange={e => setEmail(e.target.value)} />
+          <input placeholder="Senha" type="password" style={s.input} onChange={e => setPassword(e.target.value)} />
+          <button onClick={handleAuth} style={s.btnBlue}>{authMode === 'login' ? 'Entrar' : 'Cadastrar'}</button>
+          <p onClick={() => setAuthMode(authMode === 'login' ? 'cadastro' : 'login')} style={s.toggleAuth}>
+            {authMode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={s.app}>
-      <aside style={s.sidebar}>
-        <div style={s.logo}>Juris<span>PRO</span></div>
-        <nav>
-          <li onClick={() => {setTab('dashboard'); setViewCli(null)}} style={tab === 'dashboard' ? s.liA : s.li}>🏠 {t.start}</li>
-          <li onClick={() => {setTab('clientes'); setViewCli(null)}} style={tab === 'clientes' ? s.liA : s.li}>👥 {t.clients}</li>
-          <li onClick={() => {setTab('processos'); setViewCli(null)}} style={tab === 'processos' ? s.liA : s.li}>⚖️ {t.cases}</li>
-          <li onClick={() => setTab('calculadora')} style={tab === 'calculadora' ? s.liA : s.li}>🧮 {t.calcs}</li>
-        </nav>
-        <button onClick={() => signOut(auth)} style={s.btnOut}>Sair do Sistema</button>
+    <div style={s.body}>
+      <div style={s.mobileHeader}>
+        <button onClick={() => setMenuOpen(!menuOpen)} style={s.hamburger}>☰</button>
+        <span style={{fontWeight:'bold'}}>JurisPRO</span>
+        <div style={s.avatarSmall}>M</div>
+      </div>
+
+      <aside style={{...s.sidebar, display: menuOpen || window.innerWidth > 768 ? 'flex' : 'none'}}>
+        <h1 style={s.logo}>JurisPRO</h1>
+        <div style={s.menuLabel}>PRINCIPAL</div>
+        <div onClick={() => {setTab('inicio'); setMenuOpen(false)}} style={tab === 'inicio' ? s.navA : s.nav}>🏠 Dashboard</div>
+        <div onClick={() => {setTab('clientes'); setSelectedClient(null); setMenuOpen(false)}} style={tab === 'clientes' ? s.navA : s.nav}>👥 Clientes</div>
+        <div onClick={() => {setTab('processos'); setMenuOpen(false)}} style={tab === 'processos' ? s.navA : s.nav}>⚖️ Processos</div>
+        <div style={{...s.menuLabel, marginTop:'20px'}}>FERRAMENTAS</div>
+        <div onClick={() => {setTab('calc'); setMenuOpen(false)}} style={tab === 'calc' ? s.navA : s.nav}>🗓️ Calculadoras</div>
+        <div onClick={() => {setTab('ia'); setMenuOpen(false)}} style={tab === 'ia' ? s.navA : s.nav}>🤖 IA Jurídica</div>
+        <div onClick={() => signOut(auth)} style={s.sair}>Sair da Conta</div>
       </aside>
 
       <main style={s.main}>
         <header style={s.header}>
-          <div style={s.langs}>
-            {['pt', 'en', 'es'].map(l => <span key={l} onClick={() => setLang(l)} style={lang === l ? s.langA : s.lang}>{l.toUpperCase()}</span>)}
-          </div>
-          <div style={s.avatar}>{user.email[0].toUpperCase()}</div>
+          <span style={s.path}>BEM-VINDA, DRA. MARINA</span>
+          <div style={s.avatar}>M</div>
         </header>
 
         <div style={s.container}>
-          {tab === 'dashboard' && (
+          {tab === 'inicio' && (
             <div style={s.dashGrid}>
-              <div style={s.statBox}><h4>{t.cases}</h4><h2>{processos.length}</h2></div>
-              <div style={s.statBox}><h4>{t.clients}</h4><h2>{clientes.length}</h2></div>
-              <div style={{...s.card, gridColumn: 'span 2'}}>
-                <h3>Dra. Marina, bem-vinda ao JurisPRO</h3>
-                <p>O seu sistema está pronto para as demandas de hoje.</p>
-              </div>
+              <div style={s.stat}><h4>Clientes</h4><h2>{clientes.length}</h2></div>
+              <div style={s.stat}><h4>Prazos</h4><h2 style={{color:'red'}}>3</h2></div>
+              <div style={s.stat}><h4>Caixa</h4><h2 style={{color:'#10b981'}}>R$ 4.500</h2></div>
             </div>
           )}
 
-          {tab === 'calculadora' && (
+          {tab === 'clientes' && !selectedClient && (
             <div style={s.card}>
-              <h2 style={{marginBottom:'20px', color:THEME.accent}}>{t.calc_title}</h2>
-              <div style={s.flexGrid}>
-                <div style={{flex:1}}>
-                  <label style={s.label}>{t.date_pub}</label>
-                  <input type="date" style={s.input} onChange={e => setCalc({...calc, data: e.target.value})} />
-                </div>
-                <div style={{flex:1}}>
-                  <label style={s.label}>{t.days}</label>
-                  <input type="number" style={s.input} value={calc.dias} onChange={e => setCalc({...calc, dias: e.target.value})} />
-                </div>
-              </div>
-              <label style={s.label}>{t.norm}</label>
-              <select style={s.input} onChange={e => setCalc({...calc, tipo: e.target.value})}>
-                <option value="uteis">CPC/2015 - Dias Úteis</option>
-                <option value="corridos">CPP / Dias Corridos</option>
-              </select>
-              <button style={s.btnMain} onClick={calcularPrazoElite}>SIMULAR PRAZO</button>
-              
-              {resultado && (
-                <div style={s.resCard}>
-                  <p style={{fontSize:'12px', color:'#64748b'}}>{t.result}</p>
-                  <h2 style={{color: THEME.accent}}>{resultado}</h2>
-                  <div style={s.tagRecesso}>Considerando Recesso Forense e Finais de Semana</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'clientes' && !viewCli && (
-            <div style={s.card}>
-              <div style={s.flexBetween}><h3>{t.clients}</h3><button style={s.btnSmall}>+ {t.new_cli}</button></div>
+              <div style={s.flex}><h3>Clientes</h3><button onClick={async () => {
+                const n = prompt("Nome:"); const c = prompt("CPF:");
+                if(n) await addDoc(collection(db, "clientes"), {nome:n, cpf:c, processo:'', data: new Date()});
+              }} style={s.btnAdd}>+ NOVO</button></div>
               {clientes.map(c => (
                 <div key={c.id} style={s.row}>
-                    <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
-                        <div style={s.circle}>{c.nome[0]}</div>
-                        <div><strong>{c.nome}</strong><br/><small>{c.cpf}</small></div>
-                    </div>
-                    <button style={s.btnGhost} onClick={() => setViewCli(c)}>Acessar Dossiê</button>
+                  <span><strong>{c.nome}</strong><br/><small style={{color:'#64748b'}}>{c.cpf}</small></span>
+                  <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
+                    <button onClick={() => editarCliente(c)} style={s.btnIcon} title="Editar">✏️</button>
+                    <button onClick={async () => { if(window.confirm("Excluir?")) await deleteDoc(doc(db, "clientes", c.id)) }} style={s.btnIcon} title="Excluir">🗑️</button>
+                    <button onClick={() => { setSelectedClient(c); setTempProcesso(c.processo || ''); }} style={s.btnDossie}>DOSSIÊ</button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
-          {viewCli && (
+          {selectedClient && (
             <div style={s.card}>
-                <button onClick={() => setViewCli(null)} style={s.backBtn}>⬅ {t.back}</button>
-                <h2>Cliente: {viewCli.nome}</h2>
-                <div style={s.infoBox}>
-                    <h4>Processos Ativos</h4>
-                    {processos.filter(p => p.clienteId === viewCli.id).map(p => (
-                        <div key={p.id} style={s.row}>Processo Nº {p.numero}</div>
-                    ))}
+              <button onClick={() => setSelectedClient(null)} style={s.back}>⬅ Voltar</button>
+              <h2>{selectedClient.nome}</h2>
+              <div style={s.infoBox}>
+                <p><strong>CPF:</strong> {selectedClient.cpf}</p>
+                <label style={s.label}>Vincular Processo CNJ:</label>
+                <div style={s.flexMobile}>
+                  <input style={s.input} value={tempProcesso} onChange={(e) => setTempProcesso(e.target.value)} placeholder="0000000-00.0000.0.00.0000" />
+                  <button onClick={salvarProcesso} style={s.btnBlueSmall}>SALVAR</button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'calc' && (
+            <div style={s.card}>
+              <div style={s.tabLine}>
+                <span onClick={() => setCalcTab('prazos')} style={calcTab === 'prazos' ? s.tabA : s.tab}>PRAZOS</span>
+                <span onClick={() => setCalcTab('honorarios')} style={calcTab === 'honorarios' ? s.tabA : s.tab}>HONORÁRIOS</span>
+              </div>
+              <div style={{marginTop:'20px'}}>
+                {calcTab === 'prazos' ? (
+                  <><label style={s.label}>Início:</label><input type="date" style={s.input} onChange={e => setCData(e.target.value)} />
+                    <label style={s.label}>Dias:</label><input type="number" style={s.input} value={cDias} onChange={e => setCDias(e.target.value)} /></>
+                ) : (
+                  <><label style={s.label}>Valor:</label><input type="number" style={s.input} onChange={e => setCValor(e.target.value)} />
+                    <label style={s.label}>%:</label><input type="number" style={s.input} value={cPerc} onChange={e => setCPerc(e.target.value)} /></>
+                )}
+                <button onClick={calcularTudo} style={s.btnBlue}>CALCULAR</button>
+                {res && <div style={s.res}>{res}</div>}
+              </div>
             </div>
           )}
 
           {tab === 'processos' && (
             <div style={s.card}>
-                <h3>{t.cases}</h3>
-                {processos.map(p => (
-                    <div key={p.id} style={s.row}><strong>{p.numero}</strong> <small>Status: Em andamento</small></div>
-                ))}
+              <h3>Processos Ativos</h3>
+              {clientes.filter(c => c.processo).map(c => (
+                <div key={c.id} style={s.row}>
+                  <span><strong>{c.processo}</strong><br/><small>{c.nome}</small></span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'ia' && (
+            <div style={s.card}>
+              <h3>🤖 IA Jurídica</h3>
+              <textarea style={{...s.input, height:'150px'}} placeholder="Cole o texto..." onChange={e => setIaPrompt(e.target.value)} />
+              <button onClick={() => {setIaResp("Analisando..."); setTimeout(()=>setIaResp("Análise: Risco de prescrição."), 2000)}} style={s.btnBlue}>ANALISAR</button>
+              {iaResp && <div style={s.infoBox}>{iaResp}</div>}
             </div>
           )}
         </div>
@@ -183,34 +220,41 @@ export default function App() {
 }
 
 const s = {
-  app: { display: 'flex', height: '100vh', backgroundColor: THEME.bg, fontFamily: 'Inter, sans-serif' },
-  sidebar: { width: '250px', backgroundColor: THEME.sidebar, padding: '25px', display: 'flex', flexDirection: 'column' },
-  logo: { fontSize: '24px', fontWeight: 'bold', color: '#fff', marginBottom: '40px' },
-  li: { padding: '12px', color: '#94a3b8', cursor: 'pointer', listStyle: 'none', borderRadius: '8px', marginBottom: '5px' },
-  liA: { padding: '12px', color: '#fff', backgroundColor: THEME.accent, fontWeight: 'bold', listStyle: 'none', borderRadius: '8px', marginBottom: '5px' },
-  main: { flex: 1, overflowY: 'auto' },
-  header: { padding: '15px 40px', background: '#fff', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  langs: { display: 'flex', gap: '15px' },
-  lang: { cursor: 'pointer', fontSize: '12px', color: '#94a3b8' },
-  langA: { cursor: 'pointer', fontSize: '12px', color: THEME.accent, fontWeight: 'bold' },
-  avatar: { width: '35px', height: '35px', borderRadius: '50%', background: THEME.accent, color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center' },
-  container: { padding: '35px' },
-  dashGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' },
-  statBox: { background: '#fff', padding: '25px', borderRadius: '15px', border: `1px solid ${THEME.border}`, textAlign: 'center' },
-  card: { background: '#fff', padding: '30px', borderRadius: '20px', border: `1px solid ${THEME.border}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' },
-  input: { width: '100%', padding: '14px', margin: '10px 0', borderRadius: '10px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box', outline: 'none' },
-  label: { fontSize: '12px', color: '#64748b', fontWeight: '600' },
-  btnMain: { width: '100%', padding: '16px', background: THEME.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
-  resCard: { marginTop: '30px', padding: '25px', background: '#eff6ff', borderRadius: '15px', border: `1px solid ${THEME.accent}`, textAlign: 'center' },
-  tagRecesso: { display: 'inline-block', marginTop: '10px', padding: '5px 12px', background: '#dbeafe', color: '#1e40af', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold' },
-  row: { padding: '15px 0', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  circle: { width: '40px', height: '40px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold', color: THEME.accent },
-  btnGhost: { background: 'none', border: `1px solid ${THEME.accent}`, color: THEME.accent, padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' },
-  flexBetween: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  btnSmall: { padding: '8px 16px', background: THEME.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' },
-  backBtn: { background: 'none', border: 'none', color: THEME.accent, cursor: 'pointer', marginBottom: '15px', fontWeight: 'bold' },
-  infoBox: { marginTop: '20px', padding: '20px', background: '#f8fafc', borderRadius: '12px' },
-  flexGrid: { display: 'flex', gap: '20px' },
-  loginWrapper: { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f1f5f9' },
-  btnOut: { marginTop: 'auto', background: 'none', border: 'none', color: '#ef4444', textAlign: 'left', cursor: 'pointer' }
+  body: { display: 'flex', height: '100vh', backgroundColor: '#f3f4f6', fontFamily: 'sans-serif', flexDirection: window.innerWidth < 768 ? 'column' : 'row' },
+  authPage: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f3f4f6' },
+  authCard: { backgroundColor: '#fff', padding: '40px', borderRadius: '15px', textAlign: 'center', width: '350px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
+  toggleAuth: { marginTop: '15px', color: '#2563eb', cursor: 'pointer', fontSize: '13px' },
+  mobileHeader: { display: window.innerWidth < 768 ? 'flex' : 'none', padding: '15px', backgroundColor: '#fff', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e5e7eb' },
+  hamburger: { fontSize: '24px', background: 'none', border: 'none', cursor: 'pointer' },
+  sidebar: { width: window.innerWidth < 768 ? '100%' : '250px', backgroundColor: '#111827', padding: '25px 15px', color: '#fff', flexDirection: 'column', position: window.innerWidth < 768 ? 'absolute' : 'relative', zIndex: 100, height: '100%' },
+  logo: { fontSize: '24px', fontWeight: 'bold', marginBottom: '30px' },
+  menuLabel: { fontSize: '10px', color: '#4b5563', marginBottom: '10px' },
+  nav: { padding: '12px 15px', cursor: 'pointer', color: '#94a3b8', borderRadius: '8px', marginBottom: '5px' },
+  navA: { padding: '12px 15px', cursor: 'pointer', color: '#fff', backgroundColor: '#2563eb', borderRadius: '8px', marginBottom: '5px', fontWeight: 'bold' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' },
+  header: { display: window.innerWidth < 768 ? 'none' : 'flex', padding: '15px 40px', backgroundColor: '#fff', justifyContent: 'space-between', borderBottom: '1px solid #e5e7eb', alignItems:'center' },
+  avatar: { width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#2563eb', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  avatarSmall: { width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#2563eb', color: '#fff', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  container: { padding: '20px' },
+  dashGrid: { display: 'grid', gridTemplateColumns: window.innerWidth < 768 ? '1fr' : 'repeat(3, 1fr)', gap: '15px' },
+  stat: { backgroundColor: '#fff', padding: '20px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e5e7eb' },
+  card: { backgroundColor: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e5e7eb' },
+  row: { padding: '15px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems:'center' },
+  btnDossie: { border: '1px solid #2563eb', color: '#2563eb', background: 'none', padding: '6px 12px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold', fontSize: '12px' },
+  btnIcon: { background: 'none', border: '1px solid #e5e7eb', padding: '5px 8px', borderRadius: '5px', cursor: 'pointer', fontSize: '14px' },
+  btnBlue: { width: '100%', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
+  btnBlueSmall: { padding: '10px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
+  input: { width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '5px', border: '1px solid #d1d5db', boxSizing: 'border-box' },
+  flex: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  flexMobile: { display: 'flex', flexDirection: window.innerWidth < 768 ? 'column' : 'row', gap: '10px' },
+  tabLine: { display: 'flex', gap: '20px', borderBottom: '1px solid #e5e7eb' },
+  tab: { paddingBottom: '10px', cursor: 'pointer', color: '#64748b' },
+  tabA: { paddingBottom: '10px', cursor: 'pointer', color: '#2563eb', borderBottom: '2px solid #2563eb', fontWeight: 'bold' },
+  res: { marginTop: '15px', padding: '15px', backgroundColor: '#dcfce7', borderRadius: '8px', textAlign: 'center', color: '#166534', fontWeight: 'bold' },
+  infoBox: { padding: '15px', backgroundColor: '#f8fafc', borderRadius: '8px', marginTop: '15px', border: '1px solid #e5e7eb' },
+  label: { display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px', marginTop: '10px' },
+  back: { background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', padding: 0, marginBottom: '10px' },
+  btnAdd: { backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' },
+  sair: { marginTop: 'auto', color: '#ef4444', cursor: 'pointer', padding: '15px', fontSize: '13px', fontWeight: 'bold' },
+  path: { fontSize: '12px', color: '#64748b', fontWeight:'bold' }
 };
