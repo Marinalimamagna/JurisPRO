@@ -21,7 +21,7 @@ const COLORS = { bg: '#020617', card: '#0f172a', accent: '#38bdf8', text: '#f8fa
 export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState('dashboard');
-  const [menuOpen, setMenuOpen] = useState(false); // Controle do menu mobile
+  const [menuOpen, setMenuOpen] = useState(false);
   const [clientes, setClientes] = useState([]);
   const [formCli, setFormCli] = useState({ nome: '', cpf: '', tel: '', email: '' });
 
@@ -29,12 +29,25 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
-        onSnapshot(query(collection(db, "clientes"), where("advId", "==", u.uid)), (s) => 
-          setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
+        const q = query(collection(db, "clientes"), where("advId", "==", u.uid));
+        onSnapshot(q, (s) => setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
       }
     });
     return unsub;
   }, []);
+
+  const salvarCliente = async () => {
+    if(!formCli.nome) return alert("Digite ao menos o nome!");
+    try {
+      await addDoc(collection(db, "clientes"), {
+        ...formCli,
+        advId: user.uid,
+        dataCriacao: new Date().toISOString()
+      });
+      alert("✅ Cliente cadastrado com sucesso!");
+      setFormCli({ nome: '', cpf: '', tel: '', email: '' });
+    } catch (e) { alert("Erro ao salvar: " + e.message); }
+  };
 
   if (!user) return (
     <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#000', padding:'20px'}}>
@@ -49,81 +62,77 @@ export default function App() {
 
   return (
     <div style={s.app}>
-      {/* BOTÃO PARA ABRIR MENU NO CELULAR */}
+      {/* BOTÃO MOBILE */}
       <button onClick={() => setMenuOpen(!menuOpen)} style={s.menuBtn}>☰</button>
 
-      {/* SIDEBAR COM DESIGN ORIGINAL */}
-      <aside style={{
-        ...s.sidebar, 
-        left: menuOpen ? '0' : (window.innerWidth <= 768 ? '-100%' : '0') 
-      }}>
+      {/* SIDEBAR ORIGINAL - IGUAL À IMAGEM */}
+      <aside style={{ ...s.sidebar, left: menuOpen ? '0' : (window.innerWidth <= 768 ? '-100%' : '0') }}>
         <div style={s.brand}>JurisPRO <span style={{fontSize:'10px', color: COLORS.accent}}>v2.0</span></div>
         <nav style={s.nav}>
-          <li onClick={() => {setTab('dashboard'); setMenuOpen(false)}} style={tab === 'dashboard' ? s.active : s.li}>📊 Dashboard BI</li>
+          <li onClick={() => {setTab('dashboard'); setMenuOpen(false)}} style={tab === 'dashboard' ? s.active : s.li}>📊 Dashboard</li>
           <li onClick={() => {setTab('clientes'); setMenuOpen(false)}} style={tab === 'clientes' ? s.active : s.li}>👥 Clientes (CRM)</li>
-          <li onClick={() => {setTab('processos'); setMenuOpen(false)}} style={tab === 'processos' ? s.active : s.li}>⚖️ Processos</li>
-          <li onClick={() => {setTab('agenda'); setMenuOpen(false)}} style={tab === 'agenda' ? s.active : s.li}>📅 Agenda</li>
+          <li onClick={() => {setTab('processos'); setMenuOpen(false)}} style={tab === 'processos' ? s.active : s.li}>⚖️ Processos & Tribunais</li>
+          <li onClick={() => {setTab('agenda'); setMenuOpen(false)}} style={tab === 'agenda' ? s.active : s.li}>📅 Agenda & Prazos</li>
           <li onClick={() => {setTab('financeiro'); setMenuOpen(false)}} style={tab === 'financeiro' ? s.active : s.li}>💰 Financeiro</li>
-          <li onClick={() => {setTab('docs'); setMenuOpen(false)}} style={tab === 'docs' ? s.active : s.li}>📄 Gerador Docs</li>
         </nav>
         <button onClick={() => signOut(auth)} style={s.btnOut}>🔒 Sair</button>
       </aside>
 
-      {/* CONTEÚDO PRINCIPAL - AGORA RESPONSIVO */}
       <main style={s.main}>
-        <h2 style={{marginBottom: '30px'}}>Bem-vinda, Dra. Marina</h2>
-
         {tab === 'clientes' && (
           <div style={s.card}>
-            <h2 style={{marginBottom:'20px'}}>Novo Cadastro de Cliente</h2>
+            <h2 style={{marginBottom:'20px'}}>Novo Cadastro</h2>
             <div style={s.formGrid}>
               <input style={s.input} placeholder="Nome Completo" value={formCli.nome} onChange={e => setFormCli({...formCli, nome: e.target.value})} />
               <input style={s.input} placeholder="CPF / CNPJ" value={formCli.cpf} onChange={e => setFormCli({...formCli, cpf: e.target.value})} />
               <input style={s.input} placeholder="Telefone" value={formCli.tel} onChange={e => setFormCli({...formCli, tel: e.target.value})} />
               <input style={s.input} placeholder="E-mail" value={formCli.email} onChange={e => setFormCli({...formCli, email: e.target.value})} />
             </div>
-            <button style={s.btnMain}>CADASTRAR E GERAR HISTÓRICO</button>
-          </div>
-        )}
-
-        {tab === 'docs' && (
-          <div style={s.card}>
-            <h2>Gerador Inteligente de Documentos</h2>
-            <select style={s.input}>{clientes.map(c => <option key={c.id}>{c.nome}</option>)}</select>
-            <div style={s.docGrid}>
-              <button style={s.btnDoc}>📄 Procuração</button>
-              <button style={s.btnDoc}>📄 Contrato</button>
-              <button style={s.btnDoc}>📄 Declaração</button>
+            <button style={s.btnMain} onClick={salvarCliente}>SALVAR CLIENTE</button>
+            
+            <div style={{marginTop:'30px'}}>
+              <h3>Lista de Clientes ({clientes.length})</h3>
+              {clientes.map(c => (
+                <div key={c.id} style={{padding:'10px', borderBottom:`1px solid ${COLORS.border}`, marginTop:'10px'}}>
+                  {c.nome} - {c.tel}
+                </div>
+              ))}
             </div>
           </div>
         )}
-        
-        {['dashboard', 'processos', 'agenda', 'financeiro'].includes(tab) && (
-          <div style={{textAlign:'center', marginTop:'100px'}}><h2>Módulo {tab.toUpperCase()}</h2><p>Sincronizado</p></div>
+
+        {tab === 'dashboard' && (
+          <div style={s.card}>
+            <h2 style={{fontSize: '28px', marginBottom: '10px'}}>Dashboard</h2>
+            <p style={{color: '#94a3b8'}}>Bem-vinda de volta!</p>
+          </div>
+        )}
+
+        {/* OUTRAS TELAS MANTENDO O ESPAÇO */}
+        {(tab === 'processos' || tab === 'agenda' || tab === 'financeiro') && (
+          <div style={s.card}><h2>{tab.toUpperCase()}</h2><p>Área em desenvolvimento...</p></div>
         )}
       </main>
 
-      {/* SOMBRA AO ABRIR MENU NO CELULAR */}
+      {/* OVERLAY PARA CLICAR FORA NO MOBILE */}
       {menuOpen && <div onClick={() => setMenuOpen(false)} style={s.overlay} />}
     </div>
   );
 }
 
 const s = {
-  app: { display: 'flex', height: '100vh', backgroundColor: COLORS.bg, color: COLORS.text, fontFamily: 'Segoe UI, sans-serif' },
-  menuBtn: { display: window.innerWidth <= 768 ? 'block' : 'none', position: 'fixed', top: '15px', right: '15px', zIndex: 2000, background: COLORS.accent, border: 'none', borderRadius: '5px', padding: '10px 15px', fontSize: '20px', fontWeight: 'bold', cursor: 'pointer' },
-  sidebar: { width: '280px', backgroundColor: COLORS.card, padding: '30px', borderRight: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', height: '100vh', position: window.innerWidth <= 768 ? 'fixed' : 'relative', transition: '0.3s', zIndex: 1001 },
-  brand: { fontSize: '22px', fontWeight: 'bold', color: COLORS.accent, marginBottom: '40px' },
+  app: { display: 'flex', height: '100vh', backgroundColor: COLORS.bg, color: COLORS.text, fontFamily: 'sans-serif' },
+  menuBtn: { display: window.innerWidth <= 768 ? 'block' : 'none', position: 'fixed', top: '15px', left: '15px', zIndex: 2000, background: COLORS.accent, border: 'none', borderRadius: '5px', padding: '10px 12px', fontSize: '20px', cursor: 'pointer' },
+  sidebar: { width: '260px', backgroundColor: '#0f172a', padding: '25px', borderRight: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', height: '100vh', position: window.innerWidth <= 768 ? 'fixed' : 'relative', transition: '0.3s', zIndex: 1001 },
+  brand: { fontSize: '22px', fontWeight: 'bold', color: '#38bdf8', marginBottom: '40px' },
   nav: { flex: 1, listStyle: 'none', padding: 0 },
-  li: { padding: '15px', cursor: 'pointer', borderRadius: '10px', marginBottom: '8px' },
-  active: { padding: '15px', cursor: 'pointer', borderRadius: '10px', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: COLORS.accent, fontWeight: 'bold' },
-  main: { flex: 1, padding: window.innerWidth <= 768 ? '70px 20px 20px' : '40px', overflowY: 'auto' },
-  card: { backgroundColor: COLORS.card, padding: '30px', borderRadius: '20px', border: `1px solid ${COLORS.border}` },
-  input: { width: '100%', padding: '15px', margin: '10px 0', borderRadius: '10px', border: `1px solid ${COLORS.border}`, backgroundColor: '#000', color: '#fff', boxSizing: 'border-box' },
-  formGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: '10px' },
-  btnMain: { width: '100%', padding: '18px', backgroundColor: COLORS.accent, color: '#000', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', marginTop: '20px' },
-  docGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr 1fr', gap: '15px', marginTop: '20px' },
-  btnDoc: { padding: '20px', backgroundColor: '#1e293b', color: '#fff', border: `1px solid ${COLORS.border}`, borderRadius: '15px', cursor: 'pointer' },
-  btnOut: { color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', textAlign: 'left', marginTop: 'auto' },
-  overlay: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 1000 }
+  li: { padding: '15px 12px', cursor: 'pointer', borderRadius: '8px', marginBottom: '8px', color: '#94a3b8', display: 'flex', alignItems: 'center', transition: '0.2s' },
+  active: { padding: '15px 12px', cursor: 'pointer', borderRadius: '8px', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center' },
+  main: { flex: 1, padding: window.innerWidth <= 768 ? '80px 20px' : '60px', overflowY: 'auto', backgroundColor: '#020617' },
+  card: { backgroundColor: '#0f172a', padding: '30px', borderRadius: '15px', border: `1px solid ${COLORS.border}`, maxWidth: '900px' },
+  input: { width: '100%', padding: '14px', margin: '8px 0', borderRadius: '8px', border: `1px solid ${COLORS.border}`, backgroundColor: '#000', color: '#fff', fontSize: '16px' },
+  formGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: '15px' },
+  btnMain: { width: '100%', padding: '16px', backgroundColor: COLORS.accent, color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '20px', fontSize: '16px' },
+  btnOut: { color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: 'auto', padding: '10px' },
+  overlay: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000 }
 };
