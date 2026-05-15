@@ -16,133 +16,201 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const COLORS = { bg: '#020617', card: '#0f172a', accent: '#38bdf8', text: '#f8fafc', border: '#1e293b' };
+const THEME = { sidebar: '#0f172a', bg: '#f1f5f9', accent: '#2563eb', border: '#e2e8f0', white: '#ffffff', text: '#1e293b' };
+
+const i18n = {
+  pt: { start: "Início", clients: "Clientes", cases: "Processos", calcs: "Calculadora PRO", ia: "IA Jurídica", calc_title: "Gestor de Prazos Processuais", date_pub: "Data da Publicação", days: "Prazo (Dias)", norm: "Norma Aplicável", result: "Data Final Estimada", detail: "Memória de Cálculo", back: "Voltar", new_cli: "Novo Cliente" },
+  en: { start: "Home", clients: "Clients", cases: "Lawsuits", calcs: "PRO Calculator", ia: "Legal AI", calc_title: "Procedural Deadline Manager", date_pub: "Publication Date", days: "Days", norm: "Legal Norm", result: "Estimated Due Date", detail: "Calculation Memory", back: "Back", new_cli: "Add Client" },
+  es: { start: "Inicio", clients: "Clientes", cases: "Procesos", calcs: "Calculadora PRO", ia: "IA Jurídica", calc_title: "Gestor de Plazos Procesales", date_pub: "Fecha de Publicación", days: "Días", norm: "Norma Aplicable", result: "Fecha Final Estimada", detail: "Memoria de Cálculo", back: "Volver", new_cli: "Nuevo Cliente" }
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState('dashboard');
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [lang, setLang] = useState('pt');
   const [clientes, setClientes] = useState([]);
-  const [formCli, setFormCli] = useState({ nome: '', cpf: '', tel: '', email: '' });
+  const [processos, setProcessos] = useState([]);
+  const [viewCli, setViewCli] = useState(null);
+  
+  // Estados da Calculadora Avançada
+  const [calc, setCalc] = useState({ data: '', dias: 15, tipo: 'uteis', norma: 'cpc' });
+  const [resultado, setResultado] = useState(null);
+
+  const t = i18n[lang];
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
-        const q = query(collection(db, "clientes"), where("advId", "==", u.uid));
-        onSnapshot(q, (s) => setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
+        onSnapshot(query(collection(db, "clientes"), where("advId", "==", u.uid)), s => setClientes(s.docs.map(d => ({...d.data(), id: d.id}))));
+        onSnapshot(query(collection(db, "processos"), where("advId", "==", u.uid)), s => setProcessos(s.docs.map(d => ({...d.data(), id: d.id}))));
       }
     });
     return unsub;
   }, []);
 
-  const salvarCliente = async () => {
-    if(!formCli.nome) return alert("Digite ao menos o nome!");
-    try {
-      await addDoc(collection(db, "clientes"), {
-        ...formCli,
-        advId: user.uid,
-        dataCriacao: new Date().toISOString()
-      });
-      alert("✅ Cliente cadastrado com sucesso!");
-      setFormCli({ nome: '', cpf: '', tel: '', email: '' });
-    } catch (e) { alert("Erro ao salvar: " + e.message); }
+  const calcularPrazoElite = () => {
+    if(!calc.data) return alert("Insira a data de publicação.");
+    let d = new Date(calc.data);
+    let diasContados = 0;
+    
+    // Simulação de Recesso Forense (20/12 a 20/01)
+    const isRecesso = (date) => {
+        const m = date.getMonth();
+        const day = date.getDate();
+        if (m === 11 && day >= 20) return true;
+        if (m === 0 && day <= 20) return true;
+        return false;
+    };
+
+    while (diasContados < calc.dias) {
+      d.setDate(d.getDate() + 1);
+      if (isRecesso(d)) continue; // Pula recesso
+      if (calc.tipo === 'corridos') {
+        diasContados++;
+      } else {
+        if (d.getDay() !== 0 && d.getDay() !== 6) diasContados++; // Pula FDS
+      }
+    }
+    setResultado(d.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
   };
 
-  if (!user) return (
-    <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#000', padding:'20px'}}>
-      <div style={{padding:'40px', background:COLORS.card, borderRadius:'20px', textAlign:'center', width:'100%', maxWidth:'350px', border:`1px solid ${COLORS.border}`}}>
-        <h2 style={{color: COLORS.accent, marginBottom:'20px'}}>JurisPRO Elite</h2>
-        <input style={s.input} placeholder="E-mail" id="em" />
-        <input style={s.input} type="password" placeholder="Senha" id="ps" />
-        <button style={s.btnMain} onClick={() => signInWithEmailAndPassword(auth, document.getElementById('em').value, document.getElementById('ps').value)}>ENTRAR</button>
-      </div>
-    </div>
-  );
+  if (!user) return <div style={s.loginWrapper}><div style={s.card}><h2>JurisPRO Login</h2><button style={s.btnMain} onClick={() => signInWithEmailAndPassword(auth, "teste@teste.com", "123456")}>Acessar Demo</button></div></div>;
 
   return (
     <div style={s.app}>
-      <button onClick={() => setMenuOpen(!menuOpen)} style={s.menuBtn}>☰</button>
-
-      <aside style={{ ...s.sidebar, left: menuOpen ? '0' : (window.innerWidth <= 768 ? '-100%' : '0') }}>
-        <div style={s.brand}>JurisPRO <span style={{fontSize:'10px', color: COLORS.accent}}>v2.0</span></div>
-        <nav style={s.nav}>
-          <li onClick={() => {setTab('dashboard'); setMenuOpen(false)}} style={tab === 'dashboard' ? s.active : s.li}>📊 Dashboard</li>
-          <li onClick={() => {setTab('clientes'); setMenuOpen(false)}} style={tab === 'clientes' ? s.active : s.li}>👥 Clientes (CRM)</li>
-          <li onClick={() => {setTab('processos'); setMenuOpen(false)}} style={tab === 'processos' ? s.active : s.li}>⚖️ Processos & Tribunais</li>
-          <li onClick={() => {setTab('agenda'); setMenuOpen(false)}} style={tab === 'agenda' ? s.active : s.li}>📅 Agenda & Prazos</li>
-          <li onClick={() => {setTab('financeiro'); setMenuOpen(false)}} style={tab === 'financeiro' ? s.active : s.li}>💰 Financeiro</li>
+      <aside style={s.sidebar}>
+        <div style={s.logo}>Juris<span>PRO</span></div>
+        <nav>
+          <li onClick={() => {setTab('dashboard'); setViewCli(null)}} style={tab === 'dashboard' ? s.liA : s.li}>🏠 {t.start}</li>
+          <li onClick={() => {setTab('clientes'); setViewCli(null)}} style={tab === 'clientes' ? s.liA : s.li}>👥 {t.clients}</li>
+          <li onClick={() => {setTab('processos'); setViewCli(null)}} style={tab === 'processos' ? s.liA : s.li}>⚖️ {t.cases}</li>
+          <li onClick={() => setTab('calculadora')} style={tab === 'calculadora' ? s.liA : s.li}>🧮 {t.calcs}</li>
         </nav>
-        <button onClick={() => signOut(auth)} style={s.btnOut}>🔒 Sair</button>
+        <button onClick={() => signOut(auth)} style={s.btnOut}>Sair do Sistema</button>
       </aside>
 
       <main style={s.main}>
-        {tab === 'dashboard' && (
-          <div style={s.card}>
-            <h2 style={{marginBottom:'10px'}}>Dashboard</h2>
-            <p style={{color: '#94a3b8'}}>Bem-vinda de volta, Dra. Marina!</p>
-            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'20px', marginTop:'30px'}}>
-              <div style={s.statBox}><h3>{clientes.length}</h3><p>Clientes Ativos</p></div>
-              <div style={s.statBox}><h3>0</h3><p>Processos Hoje</p></div>
-              <div style={s.statBox}><h3>R$ 0,00</h3><p>Honorários</p></div>
-            </div>
+        <header style={s.header}>
+          <div style={s.langs}>
+            {['pt', 'en', 'es'].map(l => <span key={l} onClick={() => setLang(l)} style={lang === l ? s.langA : s.lang}>{l.toUpperCase()}</span>)}
           </div>
-        )}
+          <div style={s.avatar}>{user.email[0].toUpperCase()}</div>
+        </header>
 
-        {tab === 'clientes' && (
-          <div style={s.card}>
-            <h2 style={{marginBottom:'20px'}}>Novo Cadastro</h2>
-            <div style={s.formGrid}>
-              <input style={s.input} placeholder="Nome Completo" value={formCli.nome} onChange={e => setFormCli({...formCli, nome: e.target.value})} />
-              <input style={s.input} placeholder="CPF / CNPJ" value={formCli.cpf} onChange={e => setFormCli({...formCli, cpf: e.target.value})} />
-              <input style={s.input} placeholder="Telefone" value={formCli.tel} onChange={e => setFormCli({...formCli, tel: e.target.value})} />
-              <input style={s.input} placeholder="E-mail" value={formCli.email} onChange={e => setFormCli({...formCli, email: e.target.value})} />
+        <div style={s.container}>
+          {tab === 'dashboard' && (
+            <div style={s.dashGrid}>
+              <div style={s.statBox}><h4>{t.cases}</h4><h2>{processos.length}</h2></div>
+              <div style={s.statBox}><h4>{t.clients}</h4><h2>{clientes.length}</h2></div>
+              <div style={{...s.card, gridColumn: 'span 2'}}>
+                <h3>Dra. Marina, bem-vinda ao JurisPRO</h3>
+                <p>O seu sistema está pronto para as demandas de hoje.</p>
+              </div>
             </div>
-            <button style={s.btnMain} onClick={salvarCliente}>SALVAR CLIENTE</button>
-            
-            <div style={{marginTop:'30px'}}>
-              <h3 style={{marginBottom:'15px'}}>Meus Clientes</h3>
+          )}
+
+          {tab === 'calculadora' && (
+            <div style={s.card}>
+              <h2 style={{marginBottom:'20px', color:THEME.accent}}>{t.calc_title}</h2>
+              <div style={s.flexGrid}>
+                <div style={{flex:1}}>
+                  <label style={s.label}>{t.date_pub}</label>
+                  <input type="date" style={s.input} onChange={e => setCalc({...calc, data: e.target.value})} />
+                </div>
+                <div style={{flex:1}}>
+                  <label style={s.label}>{t.days}</label>
+                  <input type="number" style={s.input} value={calc.dias} onChange={e => setCalc({...calc, dias: e.target.value})} />
+                </div>
+              </div>
+              <label style={s.label}>{t.norm}</label>
+              <select style={s.input} onChange={e => setCalc({...calc, tipo: e.target.value})}>
+                <option value="uteis">CPC/2015 - Dias Úteis</option>
+                <option value="corridos">CPP / Dias Corridos</option>
+              </select>
+              <button style={s.btnMain} onClick={calcularPrazoElite}>SIMULAR PRAZO</button>
+              
+              {resultado && (
+                <div style={s.resCard}>
+                  <p style={{fontSize:'12px', color:'#64748b'}}>{t.result}</p>
+                  <h2 style={{color: THEME.accent}}>{resultado}</h2>
+                  <div style={s.tagRecesso}>Considerando Recesso Forense e Finais de Semana</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'clientes' && !viewCli && (
+            <div style={s.card}>
+              <div style={s.flexBetween}><h3>{t.clients}</h3><button style={s.btnSmall}>+ {t.new_cli}</button></div>
               {clientes.map(c => (
-                <div key={c.id} style={s.clientItem}>
-                  <div><strong>{c.nome}</strong><br/><small style={{color:'#94a3b8'}}>{c.tel} | {c.email}</small></div>
-                  <div style={{color: COLORS.accent}}>➔</div>
+                <div key={c.id} style={s.row}>
+                    <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+                        <div style={s.circle}>{c.nome[0]}</div>
+                        <div><strong>{c.nome}</strong><br/><small>{c.cpf}</small></div>
+                    </div>
+                    <button style={s.btnGhost} onClick={() => setViewCli(c)}>Acessar Dossiê</button>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
 
-        {(tab === 'processos' || tab === 'agenda' || tab === 'financeiro') && (
-          <div style={s.card}>
-            <h2>{tab === 'processos' ? '⚖️ Processos' : tab === 'agenda' ? '📅 Agenda' : '💰 Financeiro'}</h2>
-            <p style={{marginTop:'20px', color: '#94a3b8'}}>Esta tela está pronta para receber os dados dos seus {tab}.</p>
-            <div style={{padding:'40px', textAlign:'center', border:`1px dashed ${COLORS.border}`, borderRadius:'10px', marginTop:'20px'}}>
-              Lista de {tab} vazia.
+          {viewCli && (
+            <div style={s.card}>
+                <button onClick={() => setViewCli(null)} style={s.backBtn}>⬅ {t.back}</button>
+                <h2>Cliente: {viewCli.nome}</h2>
+                <div style={s.infoBox}>
+                    <h4>Processos Ativos</h4>
+                    {processos.filter(p => p.clienteId === viewCli.id).map(p => (
+                        <div key={p.id} style={s.row}>Processo Nº {p.numero}</div>
+                    ))}
+                </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
 
-      {menuOpen && <div onClick={() => setMenuOpen(false)} style={s.overlay} />}
+          {tab === 'processos' && (
+            <div style={s.card}>
+                <h3>{t.cases}</h3>
+                {processos.map(p => (
+                    <div key={p.id} style={s.row}><strong>{p.numero}</strong> <small>Status: Em andamento</small></div>
+                ))}
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
 
 const s = {
-  app: { display: 'flex', height: '100vh', backgroundColor: COLORS.bg, color: COLORS.text, fontFamily: 'sans-serif' },
-  menuBtn: { display: window.innerWidth <= 768 ? 'block' : 'none', position: 'fixed', top: '15px', left: '15px', zIndex: 2000, background: COLORS.accent, border: 'none', borderRadius: '5px', padding: '10px 12px', fontSize: '20px', cursor:'pointer' },
-  sidebar: { width: '260px', backgroundColor: '#0f172a', padding: '25px', borderRight: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', height: '100vh', position: window.innerWidth <= 768 ? 'fixed' : 'relative', transition: '0.3s', zIndex: 1001 },
-  brand: { fontSize: '22px', fontWeight: 'bold', color: COLORS.accent, marginBottom: '40px' },
-  nav: { flex: 1, listStyle: 'none', padding: 0 },
-  li: { padding: '15px 12px', cursor: 'pointer', borderRadius: '8px', marginBottom: '8px', color: '#94a3b8', display: 'flex', alignItems: 'center' },
-  active: { padding: '15px 12px', cursor: 'pointer', borderRadius: '8px', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: COLORS.accent, fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center' },
-  main: { flex: 1, padding: window.innerWidth <= 768 ? '80px 20px' : '60px', overflowY: 'auto' },
-  card: { backgroundColor: '#0f172a', padding: '30px', borderRadius: '15px', border: `1px solid ${COLORS.border}`, maxWidth: '900px' },
-  input: { width: '100%', padding: '14px', margin: '8px 0', borderRadius: '8px', border: `1px solid ${COLORS.border}`, backgroundColor: '#000', color: '#fff', fontSize: '16px' },
-  formGrid: { display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: '15px' },
-  btnMain: { width: '100%', padding: '16px', backgroundColor: COLORS.accent, color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '20px' },
-  clientItem: { padding: '15px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  statBox: { padding: '20px', background: '#000', borderRadius: '12px', border: `1px solid ${COLORS.border}`, textAlign: 'center' },
-  btnOut: { color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', marginTop: 'auto' },
-  overlay: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', zIndex: 1000 }
+  app: { display: 'flex', height: '100vh', backgroundColor: THEME.bg, fontFamily: 'Inter, sans-serif' },
+  sidebar: { width: '250px', backgroundColor: THEME.sidebar, padding: '25px', display: 'flex', flexDirection: 'column' },
+  logo: { fontSize: '24px', fontWeight: 'bold', color: '#fff', marginBottom: '40px' },
+  li: { padding: '12px', color: '#94a3b8', cursor: 'pointer', listStyle: 'none', borderRadius: '8px', marginBottom: '5px' },
+  liA: { padding: '12px', color: '#fff', backgroundColor: THEME.accent, fontWeight: 'bold', listStyle: 'none', borderRadius: '8px', marginBottom: '5px' },
+  main: { flex: 1, overflowY: 'auto' },
+  header: { padding: '15px 40px', background: '#fff', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  langs: { display: 'flex', gap: '15px' },
+  lang: { cursor: 'pointer', fontSize: '12px', color: '#94a3b8' },
+  langA: { cursor: 'pointer', fontSize: '12px', color: THEME.accent, fontWeight: 'bold' },
+  avatar: { width: '35px', height: '35px', borderRadius: '50%', background: THEME.accent, color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  container: { padding: '35px' },
+  dashGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' },
+  statBox: { background: '#fff', padding: '25px', borderRadius: '15px', border: `1px solid ${THEME.border}`, textAlign: 'center' },
+  card: { background: '#fff', padding: '30px', borderRadius: '20px', border: `1px solid ${THEME.border}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' },
+  input: { width: '100%', padding: '14px', margin: '10px 0', borderRadius: '10px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box', outline: 'none' },
+  label: { fontSize: '12px', color: '#64748b', fontWeight: '600' },
+  btnMain: { width: '100%', padding: '16px', background: THEME.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
+  resCard: { marginTop: '30px', padding: '25px', background: '#eff6ff', borderRadius: '15px', border: `1px solid ${THEME.accent}`, textAlign: 'center' },
+  tagRecesso: { display: 'inline-block', marginTop: '10px', padding: '5px 12px', background: '#dbeafe', color: '#1e40af', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold' },
+  row: { padding: '15px 0', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  circle: { width: '40px', height: '40px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold', color: THEME.accent },
+  btnGhost: { background: 'none', border: `1px solid ${THEME.accent}`, color: THEME.accent, padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' },
+  flexBetween: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  btnSmall: { padding: '8px 16px', background: THEME.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' },
+  backBtn: { background: 'none', border: 'none', color: THEME.accent, cursor: 'pointer', marginBottom: '15px', fontWeight: 'bold' },
+  infoBox: { marginTop: '20px', padding: '20px', background: '#f8fafc', borderRadius: '12px' },
+  flexGrid: { display: 'flex', gap: '20px' },
+  loginWrapper: { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f1f5f9' },
+  btnOut: { marginTop: 'auto', background: 'none', border: 'none', color: '#ef4444', textAlign: 'left', cursor: 'pointer' }
 };
