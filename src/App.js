@@ -21,9 +21,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // Estado para mostrar/ocultar senha
+  const [showPassword, setShowPassword] = useState(false);
   
-  const [tab, setTab] = useState('clientes'); 
+  const [tab, setTab] = useState('inicio'); // Mudado para iniciar no Dashboard
   const [clientes, setClientes] = useState([]);
   const [selectedClient, setSelectedClient] = useState(null);
   const [tempProcesso, setTempProcesso] = useState('');
@@ -48,6 +48,16 @@ export default function App() {
   const obterInicialUsuario = () => {
     if (!user || !user.email) return "U";
     return user.email.charAt(0).toUpperCase();
+  };
+
+  // Funções para calcular os dados dinâmicos do Dashboard
+  const calcularTotalProcessos = () => {
+    return clientes.filter(c => c.processo && c.processo.trim() !== '').length;
+  };
+
+  const calcularTotalCaixa = () => {
+    const total = clientes.reduce((acc, c) => acc + (parseFloat(c.honorariosSalvos) || 0), 0);
+    return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   useEffect(() => {
@@ -113,7 +123,7 @@ export default function App() {
     setSelectedClient({ ...selectedClient, processo: tempProcesso });
   };
 
-  const calcularTudo = () => {
+  const calcularTudo = async () => {
     if (calcTab === 'prazos') {
       if (!cData) return;
       let d = new Date(cData + 'T12:00:00');
@@ -125,8 +135,16 @@ export default function App() {
       setRes(`Data Fatal: ${d.toLocaleDateString('pt-BR')}`);
     } else if (calcTab === 'honorarios') {
       const valor = parseFloat(cValor);
-      const total = (valor * (parseInt(cPerc) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-      setRes(`Honorários: ${total}`);
+      if (isNaN(valor)) return;
+      const valorHonorario = valor * (parseInt(cPerc) / 100);
+      
+      setRes(`Honorários: ${valorHonorario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
+
+      // Se houver um cliente aberto, salva o valor calculado no Firebase para somar no Dashboard
+      if (selectedClient) {
+        await updateDoc(doc(db, "clientes", selectedClient.id), { honorariosSalvos: valorHonorario });
+        setSelectedClient({ ...selectedClient, honorariosSalvos: valorHonorario });
+      }
     }
   };
 
@@ -140,7 +158,6 @@ export default function App() {
           </h3>
           <input placeholder="E-mail" value={email} type="email" style={s.input} onChange={e => setEmail(e.target.value)} />
           
-          {/* Container com posição relativa para embutir o olhinho no input */}
           <div style={{ position: 'relative', width: '100%' }}>
             <input 
               placeholder="Senha" 
@@ -149,10 +166,7 @@ export default function App() {
               style={{ ...s.input, paddingRight: '45px' }} 
               onChange={e => setPassword(e.target.value)} 
             />
-            <span 
-              onClick={() => setShowPassword(!showPassword)} 
-              style={s.eyeIcon}
-            >
+            <span onClick={() => setShowPassword(!showPassword)} style={s.eyeIcon}>
               {showPassword ? '👁️' : '🙈'}
             </span>
           </div>
@@ -208,8 +222,10 @@ export default function App() {
           {tab === 'inicio' && (
             <div style={s.dashGrid}>
               <div style={s.stat}><h4>Clientes</h4><h2>{clientes.length}</h2></div>
-              <div style={s.stat}><h4>Prazos</h4><h2 style={{color:'red'}}>3</h2></div>
-              <div style={s.stat}><h4>Caixa</h4><h2 style={{color:'#10b981'}}>R$ 4.500</h2></div>
+              {/* ATUALIZADO: Mostra a quantidade real de processos ativos vinculados */}
+              <div style={s.stat}><h4>Processos Ativos</h4><h2 style={{color:'#2563eb'}}>{calcularTotalProcessos()}</h2></div>
+              {/* ATUALIZADO: Soma dinâmica dos valores de honorários salvos */}
+              <div style={s.stat}><h4>Previsão de Caixa</h4><h2 style={{color:'#10b981'}}>{calcularTotalCaixa()}</h2></div>
             </div>
           )}
 
@@ -219,7 +235,7 @@ export default function App() {
                 <h3 style={s.titleCard}>Gestão de Carteira</h3>
                 <button onClick={async () => {
                   const n = prompt("Nome:"); const c = prompt("CPF:");
-                  if(n) await addDoc(collection(db, "clientes"), {nome:n, cpf:c || 'Não informado', processo:'', data: new Date()});
+                  if(n) await addDoc(collection(db, "clientes"), {nome:n, cpf:c || 'Não informado', processo:'', honorariosSalvos: 0, data: new Date()});
                 }} style={s.btnAdd}>+ NOVO CLIENTE</button>
               </div>
               {clientes.map(c => (
@@ -228,7 +244,7 @@ export default function App() {
                   <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
                     <button onClick={() => editarCliente(c)} style={s.btnIcon} title="Editar">✏️</button>
                     <button onClick={async () => { if(window.confirm("Excluir?")) await deleteDoc(doc(db, "clientes", c.id)) }} style={s.btnIcon} title="Excluir">🗑️</button>
-                    <button onClick={() => { setSelectedClient(c); setTempProcesso(c.processo || ''); }} style={s.btnDossie}>ABRIR DOSSIÊ</button>
+                    <button onClick={() => { setSelectedClient(c); setTempProcesso(c.processo || ''); setRes(''); }} style={s.btnDossie}>ABRIR DOSSIÊ</button>
                   </div>
                 </div>
               ))}
@@ -241,6 +257,7 @@ export default function App() {
               <h2 style={{fontSize:'24px', fontWeight:'bold', margin:'10px 0'}}>{selectedClient.nome}</h2>
               <div style={s.infoBox}>
                 <p style={{marginBottom:'15px'}}><strong>CPF:</strong> {selectedClient.cpf}</p>
+                <p style={{marginBottom:'15px', color: '#10b981'}}><strong>Honorários Vinculados:</strong> {(selectedClient.honorariosSalvos || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 <label style={s.label}>Vincular Processo CNJ:</label>
                 <div style={s.flexMobile}>
                   <input style={s.input} value={tempProcesso} onChange={(e) => setTempProcesso(e.target.value)} placeholder="0000000-00.0000.0.00.0000" />
@@ -258,10 +275,10 @@ export default function App() {
                     <><label style={s.label}>Início:</label><input type="date" style={s.input} onChange={e => setCData(e.target.value)} />
                       <label style={s.label}>Dias:</label><input type="number" style={s.input} value={cDias} onChange={e => setCDias(e.target.value)} /></>
                   ) : (
-                    <><label style={s.label}>Valor:</label><input type="number" style={s.input} onChange={e => setCValor(e.target.value)} />
-                      <label style={s.label}>%:</label><input type="number" style={s.input} value={cPerc} onChange={e => setCPerc(e.target.value)} /></>
+                    <><label style={s.label}>Valor da Ação:</label><input type="number" style={s.input} onChange={e => setCValor(e.target.value)} placeholder="Ex: 10000" />
+                      <label style={s.label}>% de Honorários:</label><input type="number" style={s.input} value={cPerc} onChange={e => setCPerc(e.target.value)} /></>
                   )}
-                  <button onClick={calcularTudo} style={s.btnBlue}>CALCULAR</button>
+                  <button onClick={calcularTudo} style={s.btnBlue}>CALCULAR E SALVAR</button>
                   {res && <div style={s.res}>{res}</div>}
                 </div>
               </div>
@@ -288,7 +305,7 @@ export default function App() {
               <h3 style={s.titleCard}>Calculadora de Prazos Úteis</h3>
               <div style={{marginTop:'20px'}}>
                 <input type="date" style={s.input} onChange={e => setCData(e.target.value)} />
-                <input type="number" placeholder="Dias" style={s.input} onChange={e => setCDias(e.target.value)} />
+                <input type="number" placeholder="Dias" style={s.input} value={cDias} onChange={e => setCDias(e.target.value)} />
                 <button onClick={calcularTudo} style={s.btnBlue}>CALCULAR PRAZO</button>
                 {res && <div style={s.res}>{res}</div>}
               </div>
@@ -350,5 +367,5 @@ const s = {
   btnAdd: { backgroundColor: '#fff', color: '#000', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight:'bold', fontSize:'13px' },
   sair: { marginTop: 'auto', color: '#ef4444', cursor: 'pointer', padding: '15px 5px', fontSize: '13px', fontWeight: 'bold' },
   path: { fontSize: '13px', color: '#000', fontWeight:'bold' },
-  eyeIcon: { position: 'absolute', right: '15px', top: '24%', transform: 'translateY(-24%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' } // Estilo do olhinho
+  eyeIcon: { position: 'absolute', right: '15px', top: '24%', transform: 'translateY(-24%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }
 };
